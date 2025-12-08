@@ -276,21 +276,33 @@ namespace duckdb
         switch (output_child_type.id())
         {
         case LogicalTypeId::UTINYINT:
-        case LogicalTypeId::TINYINT:
             output_data_ptr = FlatVector::GetData<uint8_t>(result_data_children);
             output_increment = sizeof(uint8_t);
             output_bit_width = 8;
             break;
+        case LogicalTypeId::TINYINT:
+            output_data_ptr = FlatVector::GetData<int8_t>(result_data_children);
+            output_increment = sizeof(int8_t);
+            output_bit_width = 8;
+            break;
         case LogicalTypeId::USMALLINT:
-        case LogicalTypeId::SMALLINT:
             output_data_ptr = FlatVector::GetData<uint16_t>(result_data_children);
             output_increment = sizeof(uint16_t);
             output_bit_width = 16;
             break;
+        case LogicalTypeId::SMALLINT:
+            output_data_ptr = FlatVector::GetData<int16_t>(result_data_children);
+            output_increment = sizeof(int16_t);
+            output_bit_width = 16;
+            break;
         case LogicalTypeId::UINTEGER:
-        case LogicalTypeId::INTEGER:
             output_data_ptr = FlatVector::GetData<uint32_t>(result_data_children);
             output_increment = sizeof(uint32_t);
+            output_bit_width = 32;
+            break;
+        case LogicalTypeId::INTEGER:
+            output_data_ptr = FlatVector::GetData<int32_t>(result_data_children);
+            output_increment = sizeof(int32_t);
             output_bit_width = 32;
             break;
         case LogicalTypeId::FLOAT:
@@ -299,9 +311,13 @@ namespace duckdb
             output_bit_width = 32;
             break;
         case LogicalTypeId::UBIGINT:
-        case LogicalTypeId::BIGINT:
             output_data_ptr = FlatVector::GetData<uint64_t>(result_data_children);
             output_increment = sizeof(uint64_t);
+            output_bit_width = 64;
+            break;
+        case LogicalTypeId::BIGINT:
+            output_data_ptr = FlatVector::GetData<int64_t>(result_data_children);
+            output_increment = sizeof(int64_t);
             output_bit_width = 64;
             break;
         case LogicalTypeId::DOUBLE:
@@ -310,9 +326,13 @@ namespace duckdb
             output_bit_width = 64;
             break;
         case LogicalTypeId::UHUGEINT:
-        case LogicalTypeId::HUGEINT:
             output_data_ptr = FlatVector::GetData<uhugeint_t>(result_data_children);
             output_increment = sizeof(uhugeint_t);
+            output_bit_width = 128;
+            break;
+        case LogicalTypeId::HUGEINT:
+            output_data_ptr = FlatVector::GetData<hugeint_t>(result_data_children);
+            output_increment = sizeof(hugeint_t);
             output_bit_width = 128;
             break;
         default:
@@ -811,28 +831,11 @@ namespace duckdb
 
         using SF = ScalarFunction; // Alias for ScalarFunction
 
-        // Create function info for hilbert_encode with documentation
-        auto hilbert_encode_func = SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind);
-        
-        auto morton_encode_func = SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind);
+        hilbert_encode.AddFunction(SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind));
+        morton_encode.AddFunction(SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind));
 
-        hilbert_encode.AddFunction(hilbert_encode_func);
-        morton_encode.AddFunction(morton_encode_func);
-
-        // Create function info with documentation for hilbert_encode
-        CreateScalarFunctionInfo hilbert_encode_info(hilbert_encode);
-        hilbert_encode_info.description = "Encodes multi-dimensional data using Hilbert space-filling curve for improved spatial locality";
-        hilbert_encode_info.example = "SELECT hilbert_encode([1, 2, 3]::tinyint[3])";
-        hilbert_encode_info.category = "spatial";
-
-        // Create function info with documentation for morton_encode
-        CreateScalarFunctionInfo morton_encode_info(morton_encode);
-        morton_encode_info.description = "Encodes multi-dimensional data using Morton (Z-order) space-filling curve";
-        morton_encode_info.example = "SELECT morton_encode([1, 2, 3]::tinyint[3])";
-        morton_encode_info.category = "spatial";
-
-        loader.RegisterFunction(hilbert_encode_info);
-        loader.RegisterFunction(morton_encode_info);
+        loader.RegisterFunction(hilbert_encode);
+        loader.RegisterFunction(morton_encode);
 
         ScalarFunctionSet hilbert_decode = ScalarFunctionSet("hilbert_decode");
         ScalarFunctionSet morton_decode = ScalarFunctionSet("morton_decode");
@@ -857,20 +860,8 @@ namespace duckdb
                                lindelDecodeToArrayBind));
         }
 
-        // Create function info with documentation for hilbert_decode
-        CreateScalarFunctionInfo hilbert_decode_info(hilbert_decode);
-        hilbert_decode_info.description = "Decodes a Hilbert-encoded value back to multi-dimensional coordinates";
-        hilbert_decode_info.example = "SELECT hilbert_decode(22::uinteger, 3, false, false)";
-        hilbert_decode_info.category = "spatial";
-
-        // Create function info with documentation for morton_decode
-        CreateScalarFunctionInfo morton_decode_info(morton_decode);
-        morton_decode_info.description = "Decodes a Morton (Z-order) encoded value back to multi-dimensional coordinates";
-        morton_decode_info.example = "SELECT morton_decode(29::uinteger, 3, false, false)";
-        morton_decode_info.category = "spatial";
-
-        loader.RegisterFunction(hilbert_decode_info);
-        loader.RegisterFunction(morton_decode_info);
+        loader.RegisterFunction(hilbert_decode);
+        loader.RegisterFunction(morton_decode);
 
         QueryFarmSendTelemetry(loader, "lindel", "2025120800");
     }
