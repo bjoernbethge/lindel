@@ -241,6 +241,8 @@ namespace duckdb
         uint8_t output_bit_width = 0;
 
         // Get input data pointer and increment - optimized switch
+        // Note: We use unsigned types for all input data because we're reinterpreting
+        // the bit patterns as unsigned when passing to the Rust FFI layer
         switch (left.GetType().id())
         {
         case LogicalTypeId::UTINYINT:
