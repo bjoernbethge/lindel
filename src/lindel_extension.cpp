@@ -210,186 +210,7 @@ namespace duckdb
         return bind_data;
     }
 
-    // Struct to hold input data information
-    struct DecodeInputDataInfo
-    {
-        void *data_ptr;
-        size_t increment;
-
-        DecodeInputDataInfo(void *ptr, size_t inc) : data_ptr(ptr), increment(inc) {}
-    };
-
-    // Struct to hold output data information
-    struct DecodeOutputDataInfo
-    {
-        void *data_ptr;
-        size_t increment;
-        uint8_t bit_width;
-
-        DecodeOutputDataInfo(void *ptr, size_t inc, uint8_t width)
-            : data_ptr(ptr), increment(inc), bit_width(width) {}
-    };
-
-    // Helper function to get input data pointer and increment size
-    inline DecodeInputDataInfo getDecodeInputDataInfo(Vector &input_vector)
-    {
-        void *data_ptr = NULL;
-        size_t increment = 0;
-
-        switch (input_vector.GetType().id())
-        {
-        case LogicalTypeId::UTINYINT:
-            data_ptr = FlatVector::GetData<uint8_t>(input_vector);
-            increment = sizeof(uint8_t);
-            break;
-        case LogicalTypeId::TINYINT:
-            data_ptr = FlatVector::GetData<int8_t>(input_vector);
-            increment = sizeof(int8_t);
-            break;
-        case LogicalTypeId::USMALLINT:
-            data_ptr = FlatVector::GetData<uint16_t>(input_vector);
-            increment = sizeof(uint16_t);
-            break;
-        case LogicalTypeId::SMALLINT:
-            data_ptr = FlatVector::GetData<int16_t>(input_vector);
-            increment = sizeof(int16_t);
-            break;
-        case LogicalTypeId::UINTEGER:
-            data_ptr = FlatVector::GetData<uint32_t>(input_vector);
-            increment = sizeof(uint32_t);
-            break;
-        case LogicalTypeId::INTEGER:
-            data_ptr = FlatVector::GetData<int32_t>(input_vector);
-            increment = sizeof(int32_t);
-            break;
-        case LogicalTypeId::UBIGINT:
-            data_ptr = FlatVector::GetData<uint64_t>(input_vector);
-            increment = sizeof(uint64_t);
-            break;
-        case LogicalTypeId::BIGINT:
-            data_ptr = FlatVector::GetData<int64_t>(input_vector);
-            increment = sizeof(int64_t);
-            break;
-        case LogicalTypeId::UHUGEINT:
-            data_ptr = FlatVector::GetData<uhugeint_t>(input_vector);
-            increment = sizeof(uhugeint_t);
-            break;
-        case LogicalTypeId::HUGEINT:
-            data_ptr = FlatVector::GetData<hugeint_t>(input_vector);
-            increment = sizeof(hugeint_t);
-            break;
-        default:
-            throw NotImplementedException("hilbert_decode()/morton_decode() only supports integer input types");
-        }
-
-        return DecodeInputDataInfo(data_ptr, increment);
-    }
-
-    // Helper function to get output data pointer, increment size, and bit width
-    inline DecodeOutputDataInfo getDecodeOutputDataInfo(Vector &result, const LogicalType &output_child_type)
-    {
-        auto &result_data_children = ArrayVector::GetEntry(result);
-        void *data_ptr = NULL;
-        size_t increment = 0;
-        uint8_t bit_width = 0;
-
-        switch (output_child_type.id())
-        {
-        case LogicalTypeId::UTINYINT:
-            data_ptr = FlatVector::GetData<uint8_t>(result_data_children);
-            increment = sizeof(uint8_t);
-            bit_width = 8;
-            break;
-        case LogicalTypeId::TINYINT:
-            data_ptr = FlatVector::GetData<int8_t>(result_data_children);
-            increment = sizeof(int8_t);
-            bit_width = 8;
-            break;
-        case LogicalTypeId::USMALLINT:
-            data_ptr = FlatVector::GetData<uint16_t>(result_data_children);
-            increment = sizeof(uint16_t);
-            bit_width = 16;
-            break;
-        case LogicalTypeId::SMALLINT:
-            data_ptr = FlatVector::GetData<int16_t>(result_data_children);
-            increment = sizeof(int16_t);
-            bit_width = 16;
-            break;
-        case LogicalTypeId::UINTEGER:
-            data_ptr = FlatVector::GetData<uint32_t>(result_data_children);
-            increment = sizeof(uint32_t);
-            bit_width = 32;
-            break;
-        case LogicalTypeId::INTEGER:
-            data_ptr = FlatVector::GetData<int32_t>(result_data_children);
-            increment = sizeof(int32_t);
-            bit_width = 32;
-            break;
-        case LogicalTypeId::FLOAT:
-            data_ptr = FlatVector::GetData<float>(result_data_children);
-            increment = sizeof(float);
-            bit_width = 32;
-            break;
-        case LogicalTypeId::UBIGINT:
-            data_ptr = FlatVector::GetData<uint64_t>(result_data_children);
-            increment = sizeof(uint64_t);
-            bit_width = 64;
-            break;
-        case LogicalTypeId::BIGINT:
-            data_ptr = FlatVector::GetData<int64_t>(result_data_children);
-            increment = sizeof(int64_t);
-            bit_width = 64;
-            break;
-        case LogicalTypeId::DOUBLE:
-            data_ptr = FlatVector::GetData<double>(result_data_children); // Fixed: was int64_t
-            increment = sizeof(double);
-            bit_width = 64;
-            break;
-        case LogicalTypeId::UHUGEINT:
-            data_ptr = FlatVector::GetData<uhugeint_t>(result_data_children);
-            increment = sizeof(uhugeint_t);
-            bit_width = 128;
-            break;
-        case LogicalTypeId::HUGEINT:
-            data_ptr = FlatVector::GetData<hugeint_t>(result_data_children);
-            increment = sizeof(hugeint_t);
-            bit_width = 128;
-            break;
-        default:
-            throw NotImplementedException("hilbert_decode()/morton_decode() only supports specified output types");
-        }
-
-        return DecodeOutputDataInfo(data_ptr, increment, bit_width);
-    }
-
-    // Helper function to process all rows
-    inline void decodeRows(const DataChunk &args, const UnifiedVectorFormat &left_format,
-                           const lindelEncodingBindData &bind_info, const DecodeInputDataInfo &input_info,
-                           const DecodeOutputDataInfo &output_info, idx_t output_number_of_elements, Vector &result)
-    {
-        for (idx_t i = 0; i < args.size(); i++)
-        {
-            auto left_idx = left_format.sel->get_index(i);
-
-            // If the input value is NULL then the output value should be NULL.
-            if (!left_format.validity.RowIsValid(left_idx))
-            {
-                FlatVector::SetNull(result, i, true);
-                continue;
-            }
-
-            // Calculate memory locations for this row
-            auto result_offset = i * output_number_of_elements;
-            void *output_location = (char *)output_info.data_ptr + result_offset * output_info.increment;
-            void *source_location = (char *)input_info.data_ptr + left_idx * input_info.increment;
-
-            // Perform the actual decoding
-            perform_decode(bind_info.encoding_type, output_info.bit_width, source_location,
-                           output_location, output_number_of_elements);
-        }
-    }
-
-    // This function performs the actual decoding of values as a DuckDB scalar function.
+    // This is the "bind" function that is called for encoding an array of values.
     //
     inline void lindelDecodeArrayFun(DataChunk &args, ExpressionState &state, Vector &result)
     {
@@ -411,13 +232,114 @@ namespace duckdb
         UnifiedVectorFormat left_format;
         left.ToUnifiedFormat(args.size(), left_format);
 
-        // Get typed pointers and metadata for input and output
-        DecodeInputDataInfo input_info = getDecodeInputDataInfo(left);
-        DecodeOutputDataInfo output_info = getDecodeOutputDataInfo(result, output_child_type);
+        // Get typed pointers and metadata for input and output - inline to avoid function call overhead
+        auto &result_data_children = ArrayVector::GetEntry(result);
+        void *input_data_ptr = nullptr;
+        size_t input_increment = 0;
+        void *output_data_ptr = nullptr;
+        size_t output_increment = 0;
+        uint8_t output_bit_width = 0;
 
-        // Process each row
-        decodeRows(args, left_format, bind_info, input_info, output_info,
-                   output_number_of_elements, result);
+        // Get input data pointer and increment - optimized switch
+        switch (left.GetType().id())
+        {
+        case LogicalTypeId::UTINYINT:
+        case LogicalTypeId::TINYINT:
+            input_data_ptr = FlatVector::GetData<uint8_t>(left);
+            input_increment = sizeof(uint8_t);
+            break;
+        case LogicalTypeId::USMALLINT:
+        case LogicalTypeId::SMALLINT:
+            input_data_ptr = FlatVector::GetData<uint16_t>(left);
+            input_increment = sizeof(uint16_t);
+            break;
+        case LogicalTypeId::UINTEGER:
+        case LogicalTypeId::INTEGER:
+            input_data_ptr = FlatVector::GetData<uint32_t>(left);
+            input_increment = sizeof(uint32_t);
+            break;
+        case LogicalTypeId::UBIGINT:
+        case LogicalTypeId::BIGINT:
+            input_data_ptr = FlatVector::GetData<uint64_t>(left);
+            input_increment = sizeof(uint64_t);
+            break;
+        case LogicalTypeId::UHUGEINT:
+        case LogicalTypeId::HUGEINT:
+            input_data_ptr = FlatVector::GetData<uhugeint_t>(left);
+            input_increment = sizeof(uhugeint_t);
+            break;
+        default:
+            throw NotImplementedException("hilbert_decode()/morton_decode() only supports integer input types");
+        }
+
+        // Get output data pointer and metadata - optimized switch
+        switch (output_child_type.id())
+        {
+        case LogicalTypeId::UTINYINT:
+        case LogicalTypeId::TINYINT:
+            output_data_ptr = FlatVector::GetData<uint8_t>(result_data_children);
+            output_increment = sizeof(uint8_t);
+            output_bit_width = 8;
+            break;
+        case LogicalTypeId::USMALLINT:
+        case LogicalTypeId::SMALLINT:
+            output_data_ptr = FlatVector::GetData<uint16_t>(result_data_children);
+            output_increment = sizeof(uint16_t);
+            output_bit_width = 16;
+            break;
+        case LogicalTypeId::UINTEGER:
+        case LogicalTypeId::INTEGER:
+            output_data_ptr = FlatVector::GetData<uint32_t>(result_data_children);
+            output_increment = sizeof(uint32_t);
+            output_bit_width = 32;
+            break;
+        case LogicalTypeId::FLOAT:
+            output_data_ptr = FlatVector::GetData<float>(result_data_children);
+            output_increment = sizeof(float);
+            output_bit_width = 32;
+            break;
+        case LogicalTypeId::UBIGINT:
+        case LogicalTypeId::BIGINT:
+            output_data_ptr = FlatVector::GetData<uint64_t>(result_data_children);
+            output_increment = sizeof(uint64_t);
+            output_bit_width = 64;
+            break;
+        case LogicalTypeId::DOUBLE:
+            output_data_ptr = FlatVector::GetData<double>(result_data_children);
+            output_increment = sizeof(double);
+            output_bit_width = 64;
+            break;
+        case LogicalTypeId::UHUGEINT:
+        case LogicalTypeId::HUGEINT:
+            output_data_ptr = FlatVector::GetData<uhugeint_t>(result_data_children);
+            output_increment = sizeof(uhugeint_t);
+            output_bit_width = 128;
+            break;
+        default:
+            throw NotImplementedException("hilbert_decode()/morton_decode() only supports specified output types");
+        }
+
+        // Process each row - inlined for better performance
+        for (idx_t i = 0; i < args.size(); i++)
+        {
+            auto left_idx = left_format.sel->get_index(i);
+
+            // If the input value is NULL then the output value should be NULL.
+            if (!left_format.validity.RowIsValid(left_idx))
+            {
+                FlatVector::SetNull(result, i, true);
+                continue;
+            }
+
+            // Calculate memory locations for this row
+            auto result_offset = i * output_number_of_elements;
+            void *output_location = (char *)output_data_ptr + result_offset * output_increment;
+            void *source_location = (char *)input_data_ptr + left_idx * input_increment;
+
+            // Perform the actual decoding
+            perform_decode(bind_info.encoding_type, output_bit_width, source_location,
+                           output_location, output_number_of_elements);
+        }
 
         // Optimize for single-element case
         if (args.size() == 1)
@@ -686,7 +608,7 @@ namespace duckdb
                     auto left_data_float = FlatVector::GetData<float_t>(left_child);
                     auto result_data_u128 = FlatVector::GetData<uhugeint_t>(result);
 
-                    hilbert_encode_u32_var((uint32_t *)(left_data_float + left_offset), array_number_of_elements, result_data_u128 + i);
+                    encoder((uint32_t *)(left_data_float + left_offset), array_number_of_elements, result_data_u128 + i);
                     break;
                 }
                 default:
@@ -889,11 +811,28 @@ namespace duckdb
 
         using SF = ScalarFunction; // Alias for ScalarFunction
 
-        hilbert_encode.AddFunction(SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind));
-        morton_encode.AddFunction(SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind));
+        // Create function info for hilbert_encode with documentation
+        auto hilbert_encode_func = SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind);
+        
+        auto morton_encode_func = SF({LogicalType::ARRAY(LogicalType::ANY, optional_idx::Invalid())}, LogicalType::ANY, lindelEncodeArrayFunc, lindelEncodeArrayBind);
 
-        loader.RegisterFunction(hilbert_encode);
-        loader.RegisterFunction(morton_encode);
+        hilbert_encode.AddFunction(hilbert_encode_func);
+        morton_encode.AddFunction(morton_encode_func);
+
+        // Create function info with documentation for hilbert_encode
+        CreateScalarFunctionInfo hilbert_encode_info(hilbert_encode);
+        hilbert_encode_info.description = "Encodes multi-dimensional data using Hilbert space-filling curve for improved spatial locality";
+        hilbert_encode_info.example = "SELECT hilbert_encode([1, 2, 3]::tinyint[3])";
+        hilbert_encode_info.category = "spatial";
+
+        // Create function info with documentation for morton_encode
+        CreateScalarFunctionInfo morton_encode_info(morton_encode);
+        morton_encode_info.description = "Encodes multi-dimensional data using Morton (Z-order) space-filling curve";
+        morton_encode_info.example = "SELECT morton_encode([1, 2, 3]::tinyint[3])";
+        morton_encode_info.category = "spatial";
+
+        loader.RegisterFunction(hilbert_encode_info);
+        loader.RegisterFunction(morton_encode_info);
 
         ScalarFunctionSet hilbert_decode = ScalarFunctionSet("hilbert_decode");
         ScalarFunctionSet morton_decode = ScalarFunctionSet("morton_decode");
@@ -918,10 +857,22 @@ namespace duckdb
                                lindelDecodeToArrayBind));
         }
 
-        loader.RegisterFunction(hilbert_decode);
-        loader.RegisterFunction(morton_decode);
+        // Create function info with documentation for hilbert_decode
+        CreateScalarFunctionInfo hilbert_decode_info(hilbert_decode);
+        hilbert_decode_info.description = "Decodes a Hilbert-encoded value back to multi-dimensional coordinates";
+        hilbert_decode_info.example = "SELECT hilbert_decode(22::uinteger, 3, false, false)";
+        hilbert_decode_info.category = "spatial";
 
-        QueryFarmSendTelemetry(loader, "lindel", "202509231");
+        // Create function info with documentation for morton_decode
+        CreateScalarFunctionInfo morton_decode_info(morton_decode);
+        morton_decode_info.description = "Decodes a Morton (Z-order) encoded value back to multi-dimensional coordinates";
+        morton_decode_info.example = "SELECT morton_decode(29::uinteger, 3, false, false)";
+        morton_decode_info.category = "spatial";
+
+        loader.RegisterFunction(hilbert_decode_info);
+        loader.RegisterFunction(morton_decode_info);
+
+        QueryFarmSendTelemetry(loader, "lindel", "2025120800");
     }
 
     void LindelExtension::Load(ExtensionLoader &loader)
@@ -935,7 +886,7 @@ namespace duckdb
 
     std::string LindelExtension::Version() const
     {
-        return "202509301";
+        return "2025120800";
     }
 
 } // namespace duckdb
