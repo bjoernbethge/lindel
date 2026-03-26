@@ -1,5 +1,7 @@
 # Lindel (linearizer-delinearizer) Extension for DuckDB
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/N4N71WOHZ3)
+
 ![Ducks filling Space-Filling Curves](./docs/space-filling-curve-ducks.jpg)
 
 This `lindel` extension adds functions for the [linearization](https://en.wikipedia.org/wiki/Linearization) and delinearization of numeric arrays in [DuckDB](https://www.duckdb.org).  It allows you to order multi-dimensional data using space-filling curves.
